@@ -1,0 +1,265 @@
+School Version 2:
+import random
+
+# Define the Ship class to represent a ship in the game
+class Ship:
+    def __init__(self, size, positions):
+        self.size = size  # Size of the ship (number of cells it occupies)
+        self.positions = positions  # List of (x, y) coordinates where the ship is placed
+        self.hits = [False] * size  # Tracks which parts of the ship have been hit
+
+    # Mark a position on the ship as hit
+    def hit(self, position):
+        index = self.positions.index(position)  # Find the index of the position
+        self.hits[index] = True  # Mark that part of the ship as hit
+
+    # Check if the ship is completely sunk
+    def is_sunk(self):
+        return all(self.hits)  # Returns True if all parts of the ship are hit
+
+
+# Print the player's board with row and column numbers
+def print_player_board(board):
+    print("  0 1 2 3 4 5 6 7 8 9")  # Print column numbers
+    for i in range(len(board)):
+        print(f"{i} {' '.join(board[i])}")  # Print each row with its row number
+
+
+# Print the enemy's board, hiding un-hit ships
+def print_hidden_board(board, hit_board):
+    print("  0 1 2 3 4 5 6 7 8 9")  # Print column numbers
+    for i in range(len(board)):
+        row = board[i]
+        hit_row = hit_board[i]
+        # Print each cell, hiding un-hit ships ('S') with 'O' or '-'
+        print(f"{i} {' '.join([hit_row[j] if hit_row[j] != 'X' else '-' if cell == 'S' else cell for j, cell in enumerate(row)])}")
+
+
+# Create an empty 10x10 game board
+def create_board():
+    return [['O' for _ in range(10)] for _ in range(10)]  # 'O' represents empty sea
+
+
+# Randomly place ships on the board
+def place_ships(board):
+    ship_sizes = [5, 4, 3, 3, 2]  # Sizes of the ships to be placed
+    ships = []  # List to store Ship objects
+    for size in ship_sizes:
+        while True:
+            # Randomly choose orientation (horizontal or vertical)
+            orientation = random.choice(['horizontal', 'vertical'])
+            if orientation == 'horizontal':
+                # Randomly choose starting position for horizontal placement
+                x = random.randint(0, 9)
+                y = random.randint(0, 10 - size)
+                # Check if all cells are empty
+                if all(board[x][y+i] == 'O' for i in range(size)):
+                    positions = [(x, y+i) for i in range(size)]  # Store ship positions
+                    ships.append(Ship(size, positions))  # Add the ship to the list
+                    for i in range(size):
+                        board[x][y+i] = 'S'  # Mark the ship on the board
+                    break
+            else:
+                # Randomly choose starting position for vertical placement
+                x = random.randint(0, 10 - size)
+                y = random.randint(0, 9)
+                # Check if all cells are empty
+                if all(board[x+i][y] == 'O' for i in range(size)):
+                    positions = [(x+i, y) for i in range(size)]  # Store ship positions
+                    ships.append(Ship(size, positions))  # Add the ship to the list
+                    for i in range(size):
+                        board[x+i][y] = 'S'  # Mark the ship on the board
+                    break
+    return ships  # Return the list of placed ships
+
+
+# Check if all ships on the board are sunk
+def game_over(board):
+    return all(all(cell != 'S' for cell in row) for row in board)  # True if no 'S' remains
+
+
+# Allow the player to place their ships on the board
+def player_place_ships(board):
+    ship_sizes = [5, 4, 3, 3, 2]  # Sizes of the ships to be placed
+    ships_p = []  # List to store the player's ships
+    for size in ship_sizes:
+        print_player_board(board)  # Show the current board
+        while True:
+            try:
+                print(f'Placing ship of size {size}')
+                # Get ship placement details from the player
+                x = int(input('Enter row number (0-9): '))
+                y = int(input('Enter column number (0-9): '))
+                orientation = input('Enter orientation (h for horizontal, v for vertical): ').lower()
+                if orientation == 'h':
+                    # Check if the ship fits horizontally
+                    if y + size > 10:
+                        raise ValueError('Ship out of bounds')
+                    if all(board[x][y+i] == 'O' for i in range(size)):
+                        # Place the ship horizontally
+                        for i in range(size):
+                            board[x][y+i] = 'S'
+                        ships_p.append(Ship(size, [(x, y+i) for i in range(size)]))
+                        break
+                    else:
+                        print('Ship overlaps with another ship. Try again.')
+                elif orientation == 'v':
+                    # Check if the ship fits vertically
+                    if x + size > 10:
+                        raise ValueError('Ship out of bounds')
+                    if all(board[x+i][y] == 'O' for i in range(size)):
+                        # Place the ship vertically
+                        for i in range(size):
+                            board[x+i][y] = 'S'
+                        ships_p.append(Ship(size, [(x+i, y) for i in range(size)]))
+                        break
+                    else:
+                        print('Ship overlaps with another ship. Try again.')
+                else:
+                    print('Invalid orientation. Try again.')
+            except (ValueError, IndexError):
+                print('Invalid input or ship placement. Try again.')
+    return ships_p  # Return the list of the player's ships
+
+
+# AI Targeting system to track hits and plan attacks
+class AITargeting:
+    def __init__(self):
+        self.hits = []  # List of coordinates where the AI has hit a ship
+        self.potential_targets = []  # List of adjacent cells to target after a hit
+        self.last_hit = None  # Last successful hit coordinates
+
+    # Update tracking after a successful hit
+    def update_tracking(self, x, y):
+        self.hits.append((x, y))  # Add the hit to the list
+        self._generate_potential_targets(x, y)  # Generate potential targets around the hit
+
+    # Generate potential targets around a hit
+    def _generate_potential_targets(self, x, y):
+        potential = [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]  # Adjacent cells
+        # Filter out invalid or already targeted cells
+        self.potential_targets = [
+            (px, py) for px, py in potential
+            if 0 <= px < 10 and 0 <= py < 10 and (px, py) not in self.hits
+        ]
+
+    # Decide the AI's next move
+    def ai_move(self, board):
+        # Prioritize potential targets if available
+        if self.potential_targets:
+            return self.potential_targets.pop(0)
+        # Otherwise, choose a random valid cell
+        while True:
+            x = random.randint(0, 9)
+            y = random.randint(0, 9)
+            if board[x][y] == 'O' or board[x][y] == 'S':
+                return x, y
+
+
+# Create an AI targeting object
+ai_targeting = AITargeting()
+
+
+# AI makes a move on the player's board
+def ai_move(board, player_ships):
+    x, y = ai_targeting.ai_move(board)  # Get the AI's move
+
+    if board[x][y] == 'S':
+        print(f"AI hit your ship at ({x}, {y})!")  # Notify the player of a hit
+        ai_targeting.update_tracking(x, y)  # Update AI tracking
+        board[x][y] = 'X'  # Mark the hit on the board
+        if ship_ai_sunk(player_ships, x, y):  # Check if the ship is sunk
+            print('Sorry, the enemy sank one of your ships!')
+    elif board[x][y] == 'O':  # If the AI misses
+        print(f"AI missed at ({x}, {y})!")
+        board[x][y] = '-'  # Mark the miss on the board
+    return x, y
+
+
+# Check if a ship is sunk after a hit
+def ship_sunk(ships, x, y):
+    for ship in ships:
+        if (x, y) in ship.positions:  # Check if the hit is part of the ship
+            ship.hit((x, y))  # Mark the hit on the ship
+            return ship.is_sunk()  # Check if the ship is now sunk
+    return False
+
+
+# Check if the AI sank one of the player's ships
+def ship_ai_sunk(ships_p, x, y):
+    for ship in ships_p:
+        if (x, y) in ship.positions:  # Check if the hit is part of the ship
+            ship.hit((x, y))  # Mark the hit on the ship
+            return ship.is_sunk()  # Check if the ship is now sunk
+    return False
+
+
+# Main game loop
+def play_game():
+    while True:
+        # Initialize boards and ships
+        player_board = create_board()
+        ai_board = create_board()
+        ai_hit_board = [['O' for _ in range(10)] for _ in range(10)]  # Board to track AI hits
+
+        print('Welcome to Battleship in Python!')
+        print('Please Place your ships:')
+        player_ships = player_place_ships(player_board)  # Player places their ships
+        ai_ships = place_ships(ai_board)  # AI places its ships randomly
+
+        # Game loop: alternate between player and AI turns
+        while not game_over(player_board) and not game_over(ai_board):
+            # Player's turn
+            print('\nPlayer\'s Turn:')
+            print('Your Board:')
+            print_player_board(player_board)  # Show the player's board
+            print('\nEnemy\'s Board:')
+            print_hidden_board(ai_board, ai_hit_board)  # Show the AI's hidden board
+            try:
+                # Get the player's attack coordinates
+                x = int(input('Enter row number (0-9): '))
+                y = int(input('Enter column number (0-9): '))
+                if x < 0 or x > 9 or y < 0 or y > 9:
+                    raise ValueError('Invalid input. Row and column numbers must be between 0 and 9.')
+            except ValueError as e:
+                print(f'Error: {e}. Try again.')
+                continue
+
+            # Check if the player hit an enemy ship
+            if ai_board[x][y] == 'S':
+                print('You hit the enemy ship!')
+                ai_board[x][y] = 'X'  # Mark the hit on the AI's board
+                ai_hit_board[x][y] = 'X'  # Mark the hit on the hidden board
+                if ship_sunk(ai_ships, x, y):  # Check if the ship is sunk
+                    print('Congratulations! You sank the enemy ship!')
+            else:
+                print('You missed!')
+                ai_hit_board[x][y] = '-'  # Mark the miss on the hidden board
+
+            # Check if the player has won
+            if game_over(ai_board):
+                print('\nCongratulations! You sank all the enemy ships!')
+                print('\nEnemy\'s Final Board:')
+                print_hidden_board(ai_board, ai_hit_board)
+                break
+
+            # AI's turn
+            print('\nAI\'s Turn:')
+            x, y = ai_move(player_board, player_ships)  # AI makes a move
+
+            # Check if the AI has won
+            if game_over(player_board):
+                print('\nSorry, you lost! All your ships have been sunk by the enemy.')
+                print('\nEnemy\'s Final Board:')
+                print_hidden_board(ai_board, ai_hit_board)
+                break
+
+        # Ask the player if they want to play again
+        play_again = input("Do you want to play again? (yes/no): ").strip().lower()
+        if play_again != 'yes':
+            print("Thanks for playing! Hope you enjoyed the Game!")
+            break
+
+
+# Start the game
+play_game()
