@@ -1,4 +1,5 @@
-School Version 2:
+#School Version 2:
+#Jonah black & ChatGPT
 import random
 
 # Define the Ship class to represent a ship in the game
